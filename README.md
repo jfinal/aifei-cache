@@ -15,6 +15,8 @@ The extension is intentionally lightweight. It is suitable for page data cache, 
 - Maven 3+
 - Aifei 1.0.0 when used as an Aifei plugin
 
+The project is compiled with Java 8 bytecode target and has been tested with JDK 8 and JDK 21.
+
 ## Maven
 
 ```xml
