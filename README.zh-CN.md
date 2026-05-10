@@ -138,48 +138,118 @@ cache.redis.database = 0
 
 ## 常用 API
 
-使用默认缓存区域：
+业务代码优先使用 `CacheKit`。只传 `key` 的方法会使用 `cache.defaultName` 指定的默认缓存区域；带 `cacheName` 的方法会操作指定的命名缓存区域。
+
+### 读取
+
+```java
+String value = CacheKit.get("k");
+User user = CacheKit.get("user", "1");
+```
+
+| 方法 | 说明 |
+| --- | --- |
+| `<T> T get(String key)` | 从默认缓存区域读取值。key 不存在或已过期时返回 `null`。 |
+| `<T> T get(String cacheName, String key)` | 从指定缓存区域读取值。 |
+
+返回值由调用方进行类型转换，因此同一个 key 在业务代码里应保持稳定的值类型。
+
+### 写入
 
 ```java
 CacheKit.put("k", "v");
 CacheKit.put("k", "v", 60);
-
-String value = CacheKit.get("k");
-boolean exists = CacheKit.exists("k");
-
-CacheKit.remove("k");
+CacheKit.put("user", "1", user);
+CacheKit.put("user", "1", user, 300);
 ```
 
-使用命名缓存区域：
+| 方法 | 说明 |
+| --- | --- |
+| `void put(String key, Object value)` | 写入默认缓存区域，过期时间使用 `cache.defaultTtlSeconds`。 |
+| `void put(String key, Object value, long ttlSeconds)` | 写入默认缓存区域，并指定过期时间，单位秒。`0` 表示不过期。 |
+| `void put(String cacheName, String key, Object value)` | 写入指定缓存区域，过期时间使用 `cache.defaultTtlSeconds`。 |
+| `void put(String cacheName, String key, Object value, long ttlSeconds)` | 写入指定缓存区域，并指定过期时间，单位秒。 |
+
+Redis 后端对普通对象使用 JDK 序列化，自定义对象需要实现 `java.io.Serializable`。
+
+### 读穿缓存
 
 ```java
-CacheKit.put("user", "1", user, 300);
-User user = CacheKit.get("user", "1");
+User user = CacheKit.getOrSet("user:1", () -> User.findById(1));
+User userWithTtl = CacheKit.getOrSet("user:1", 300, () -> User.findById(1));
+User namedUser = CacheKit.getOrSet("user", "1", 300, () -> User.findById(1));
+```
 
+| 方法 | 说明 |
+| --- | --- |
+| `<T> T getOrSet(String key, Supplier<T> supplier)` | 先从默认缓存区域读取。不存在时执行 `supplier`，将结果按 `cache.defaultTtlSeconds` 写入缓存，并返回结果。 |
+| `<T> T getOrSet(String key, long ttlSeconds, Supplier<T> supplier)` | 与上面相同，但使用指定过期时间，单位秒。 |
+| `<T> T getOrSet(String cacheName, String key, long ttlSeconds, Supplier<T> supplier)` | 指定缓存区域的读穿缓存。 |
+
+`getOrSet` 内部使用分段锁，减少高并发下同一个 key 的重复加载。`supplier` 返回 `null` 时，只有 `cache.cacheNull = true` 才会缓存 `null`。
+
+### 判断是否存在
+
+```java
+boolean exists = CacheKit.exists("k");
+boolean userExists = CacheKit.exists("user", "1");
+```
+
+| 方法 | 说明 |
+| --- | --- |
+| `boolean exists(String key)` | 判断默认缓存区域中是否存在未过期的 key。 |
+| `boolean exists(String cacheName, String key)` | 判断指定缓存区域中是否存在未过期的 key。 |
+
+### 删除和清理
+
+```java
+CacheKit.remove("k");
 CacheKit.remove("user", "1");
 CacheKit.clear("user");
-```
-
-读穿缓存，也就是没有缓存时执行加载逻辑并写入缓存：
-
-```java
-User user = CacheKit.getOrSet("user:1", 300, () -> User.findById(1));
-```
-
-计数器：
-
-```java
-long n = CacheKit.incr("sms:send:18800000000");
-long left = CacheKit.decr("stock", "sku-1001", 1);
-```
-
-清理当前后端控制的全部缓存数据：
-
-```java
 CacheKit.clearAll();
 ```
 
+| 方法 | 说明 |
+| --- | --- |
+| `void remove(String key)` | 从默认缓存区域删除单个 key。 |
+| `void remove(String cacheName, String key)` | 从指定缓存区域删除单个 key。 |
+| `void clear(String cacheName)` | 清空指定缓存区域中的全部 key。 |
+| `void clearAll()` | 清空当前后端实例控制的全部缓存数据。 |
+
 使用 Redis 后端时，`clearAll()` 要求 `cache.keyPrefix` 非空，并且只会删除该前缀下的 key。
+
+### 计数器
+
+```java
+long n = CacheKit.incr("sms:send:18800000000");
+long stock = CacheKit.decr("stock", "sku-1001", 1);
+```
+
+| 方法 | 说明 |
+| --- | --- |
+| `long incr(String key)` | 将默认缓存区域中的数字值加 `1`。key 不存在时从 `0` 开始。 |
+| `long incr(String cacheName, String key, long delta)` | 将指定缓存区域中的数字值增加 `delta`。 |
+| `long decr(String key)` | 将默认缓存区域中的数字值减 `1`。key 不存在时从 `0` 开始。 |
+| `long decr(String cacheName, String key, long delta)` | 将指定缓存区域中的数字值减少 `delta`。 |
+
+计数器方法返回操作后的新值。Redis 计数器以整数字符串存储，读取结果类型为 `Long`。
+
+### 生命周期和高级访问
+
+```java
+Cache cache = CacheKit.getCache();
+CacheKit.init(cache);
+CacheKit.clearInit();
+```
+
+| 方法 | 说明 |
+| --- | --- |
+| `Cache getCache()` | 获取当前缓存实例。`CacheKit` 未初始化时会抛出异常。 |
+| `void init(Cache cache)` | 设置当前缓存实例。通常由 `CachePlugin.start()` 调用。 |
+| `void clearInit()` | 清空静态缓存实例引用。通常由 `CachePlugin.stop()` 调用。 |
+| `void close()` | `Cache` 实例方法，用于释放 Redis 连接池等后端资源。通常由 `CachePlugin.stop()` 调用。 |
+
+普通 Aifei 应用中，建议交给 `CachePlugin` 管理 `init`、`clearInit` 和 `close`。
 
 ## 手动初始化
 

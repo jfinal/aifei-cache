@@ -136,48 +136,118 @@ cache.redis.database = 0
 
 ## API
 
-Use the default cache region:
+Most application code should use `CacheKit`. The single-key methods use `cache.defaultName` as the cache region. Methods with `cacheName` operate on the specified named region.
+
+### Read
+
+```java
+String value = CacheKit.get("k");
+User user = CacheKit.get("user", "1");
+```
+
+| Method | Description |
+| --- | --- |
+| `<T> T get(String key)` | Reads a value from the default cache region. Returns `null` when the key does not exist or has expired. |
+| `<T> T get(String cacheName, String key)` | Reads a value from the specified cache region. |
+
+The returned value is cast by the caller, so keep the key's value type stable in your application code.
+
+### Write
 
 ```java
 CacheKit.put("k", "v");
 CacheKit.put("k", "v", 60);
-
-String value = CacheKit.get("k");
-boolean exists = CacheKit.exists("k");
-
-CacheKit.remove("k");
+CacheKit.put("user", "1", user);
+CacheKit.put("user", "1", user, 300);
 ```
 
-Use a named cache region:
+| Method | Description |
+| --- | --- |
+| `void put(String key, Object value)` | Writes a value to the default cache region using `cache.defaultTtlSeconds`. |
+| `void put(String key, Object value, long ttlSeconds)` | Writes a value to the default cache region with a custom TTL in seconds. `0` means no expiration. |
+| `void put(String cacheName, String key, Object value)` | Writes a value to the specified cache region using `cache.defaultTtlSeconds`. |
+| `void put(String cacheName, String key, Object value, long ttlSeconds)` | Writes a value to the specified cache region with a custom TTL in seconds. |
+
+For Redis, ordinary values are JDK-serialized. Custom objects should implement `java.io.Serializable`.
+
+### Read-Through Cache
 
 ```java
-CacheKit.put("user", "1", user, 300);
-User user = CacheKit.get("user", "1");
+User user = CacheKit.getOrSet("user:1", () -> User.findById(1));
+User userWithTtl = CacheKit.getOrSet("user:1", 300, () -> User.findById(1));
+User namedUser = CacheKit.getOrSet("user", "1", 300, () -> User.findById(1));
+```
 
+| Method | Description |
+| --- | --- |
+| `<T> T getOrSet(String key, Supplier<T> supplier)` | Reads from the default cache region. If missing, calls `supplier`, writes the result with `cache.defaultTtlSeconds`, and returns it. |
+| `<T> T getOrSet(String key, long ttlSeconds, Supplier<T> supplier)` | Same as above, but uses a custom TTL in seconds. |
+| `<T> T getOrSet(String cacheName, String key, long ttlSeconds, Supplier<T> supplier)` | Read-through cache for a named region. |
+
+`getOrSet` uses segmented locks to reduce repeated loading for the same key under concurrency. If `supplier` returns `null`, the value is cached only when `cache.cacheNull = true`.
+
+### Exists
+
+```java
+boolean exists = CacheKit.exists("k");
+boolean userExists = CacheKit.exists("user", "1");
+```
+
+| Method | Description |
+| --- | --- |
+| `boolean exists(String key)` | Checks whether a non-expired key exists in the default cache region. |
+| `boolean exists(String cacheName, String key)` | Checks whether a non-expired key exists in the specified cache region. |
+
+### Remove And Clear
+
+```java
+CacheKit.remove("k");
 CacheKit.remove("user", "1");
 CacheKit.clear("user");
-```
-
-Use read-through cache:
-
-```java
-User user = CacheKit.getOrSet("user:1", 300, () -> User.findById(1));
-```
-
-Use counters:
-
-```java
-long n = CacheKit.incr("sms:send:18800000000");
-long left = CacheKit.decr("stock", "sku-1001", 1);
-```
-
-Clear all cache data controlled by the current backend:
-
-```java
 CacheKit.clearAll();
 ```
 
+| Method | Description |
+| --- | --- |
+| `void remove(String key)` | Removes one key from the default cache region. |
+| `void remove(String cacheName, String key)` | Removes one key from the specified cache region. |
+| `void clear(String cacheName)` | Clears all keys in the specified cache region. |
+| `void clearAll()` | Clears all cache data controlled by the current backend instance. |
+
 For Redis, `clearAll()` requires a non-empty `cache.keyPrefix` and only deletes keys under that prefix.
+
+### Counters
+
+```java
+long n = CacheKit.incr("sms:send:18800000000");
+long stock = CacheKit.decr("stock", "sku-1001", 1);
+```
+
+| Method | Description |
+| --- | --- |
+| `long incr(String key)` | Increments a numeric value in the default cache region by `1`. Missing keys start from `0`. |
+| `long incr(String cacheName, String key, long delta)` | Increments a numeric value in the specified cache region by `delta`. |
+| `long decr(String key)` | Decrements a numeric value in the default cache region by `1`. Missing keys start from `0`. |
+| `long decr(String cacheName, String key, long delta)` | Decrements a numeric value in the specified cache region by `delta`. |
+
+Counter methods return the new value after the operation. Redis counters are stored as integer text and returned as `Long`.
+
+### Lifecycle And Advanced Access
+
+```java
+Cache cache = CacheKit.getCache();
+CacheKit.init(cache);
+CacheKit.clearInit();
+```
+
+| Method | Description |
+| --- | --- |
+| `Cache getCache()` | Returns the current cache instance. Throws an exception if `CacheKit` has not been initialized. |
+| `void init(Cache cache)` | Sets the current cache instance. Normally called by `CachePlugin.start()`. |
+| `void clearInit()` | Clears the static cache reference. Normally called by `CachePlugin.stop()`. |
+| `void close()` | Method on the `Cache` instance, used to release backend resources such as Redis connection pools. Normally called by `CachePlugin.stop()`. |
+
+In normal Aifei applications, prefer `CachePlugin` to manage `init`, `clearInit`, and `close`.
 
 ## Manual Initialization
 
