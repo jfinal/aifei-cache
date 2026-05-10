@@ -61,3 +61,15 @@ CacheKit.clear("default");
 - `redis` backend serializes ordinary values with JDK serialization, so custom objects must implement `Serializable`.
 - Redis counters are stored as integer text and returned as `Long`.
 - Keep `cache.keyPrefix` non-empty when using Redis. `clearAll()` refuses to run with an empty prefix.
+
+## Tests
+
+```bash
+mvn test
+```
+
+Redis integration test is skipped by default. Run it explicitly with:
+
+```bash
+mvn "-Dtest=RedisCacheIntegrationTest" "-Dredis.integration=true" "-Dredis.host=127.0.0.1" "-Dredis.port=6379" "-Dredis.password=your-password" "-Dredis.database=0" test
+```
