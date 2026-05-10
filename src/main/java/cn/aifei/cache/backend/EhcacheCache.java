@@ -1,0 +1,88 @@
+package cn.aifei.cache.backend;
+
+import cn.aifei.cache.CacheConfig;
+import net.sf.ehcache.CacheManager;
+import net.sf.ehcache.Element;
+
+public class EhcacheCache extends AbstractCache {
+
+    private final CacheManager manager;
+
+    public EhcacheCache(CacheConfig config) {
+        super(config);
+        this.manager = CacheManager.create();
+    }
+
+    @Override
+    protected Object getValue(String cacheName, String key) {
+        net.sf.ehcache.Cache cache = cache(cacheName);
+        Element element = cache.get(key);
+        if (element == null) {
+            return null;
+        }
+        CacheEntry entry = (CacheEntry) element.getObjectValue();
+        if (entry.isExpired()) {
+            cache.remove(key);
+            return null;
+        }
+        return entry.getValue();
+    }
+
+    @Override
+    protected void putValue(String cacheName, String key, Object value, long ttlSeconds) {
+        cache(cacheName).put(new Element(key, new CacheEntry(value, ttlSeconds)));
+    }
+
+    @Override
+    public boolean exists(String cacheName, String key) {
+        return getValue(cacheName, key) != null;
+    }
+
+    @Override
+    public void remove(String cacheName, String key) {
+        cache(cacheName).remove(key);
+    }
+
+    @Override
+    public void clear(String cacheName) {
+        cache(cacheName).removeAll();
+    }
+
+    @Override
+    public void clearAll() {
+        for (String name : manager.getCacheNames()) {
+            clear(name);
+        }
+    }
+
+    @Override
+    public long incr(String cacheName, String key, long delta) {
+        net.sf.ehcache.Cache cache = cache(cacheName);
+        synchronized (cache) {
+            Object old = getValue(cacheName, key);
+            long next = (old instanceof Number ? ((Number) old).longValue() : 0L) + delta;
+            cache.put(new Element(key, new CacheEntry(next, config.getDefaultTtlSeconds())));
+            return next;
+        }
+    }
+
+    @Override
+    public void close() {
+        manager.shutdown();
+    }
+
+    private net.sf.ehcache.Cache cache(String cacheName) {
+        net.sf.ehcache.Cache cache = manager.getCache(cacheName);
+        if (cache != null) {
+            return cache;
+        }
+        synchronized (manager) {
+            cache = manager.getCache(cacheName);
+            if (cache == null) {
+                cache = new net.sf.ehcache.Cache(cacheName, (int) config.getMaxSize(), false, false, 0, 0);
+                manager.addCache(cache);
+            }
+            return cache;
+        }
+    }
+}
