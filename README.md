@@ -1,5 +1,7 @@
 # aifei-cache
 
+English | [简体中文](README.zh-CN.md)
+
 `aifei-cache` is a small cache extension for Aifei projects. It provides:
 
 - A unified `Cache` API.
@@ -13,7 +15,7 @@ The extension is intentionally lightweight. It is suitable for page data cache, 
 
 - JDK 8+
 - Maven 3+
-- Aifei 1.0.0 when used as an Aifei plugin
+- Aifei 1.0.1 when used as an Aifei plugin
 
 The project is compiled with Java 8 bytecode target and has been tested with JDK 8 and JDK 21.
 

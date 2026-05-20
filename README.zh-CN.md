@@ -1,5 +1,7 @@
 # aifei-cache 中文说明
 
+[English](README.md) | 简体中文
+
 `aifei-cache` 是面向 Aifei 项目的轻量级缓存扩展，提供统一缓存 API 和多个后端实现。
 
 它包含：
@@ -15,7 +17,7 @@
 
 - JDK 8+
 - Maven 3+
-- 如果作为 Aifei 插件使用，需要 Aifei 1.0.0
+- 如果作为 Aifei 插件使用，需要 Aifei 1.0.1
 
 项目以 Java 8 字节码目标编译，已在 JDK 8 和 JDK 21 下测试通过。
 
