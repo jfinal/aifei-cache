@@ -21,6 +21,7 @@ public class RedisCacheIntegrationTest {
         Cache cache = new RedisCache(new CacheConfig()
                 .setType("redis")
                 .setDefaultName("default")
+                .setDefaultTtlSeconds(1)
                 .setKeyPrefix(prefix)
                 .setRedisHost(required("redis.host"))
                 .setRedisPort(Integer.getInteger("redis.port", 6379))
@@ -53,6 +54,9 @@ public class RedisCacheIntegrationTest {
             assertEquals(1, n.get());
 
             assertEquals(1L, cache.incr("counter"));
+            Thread.sleep(1300);
+            assertFalse(cache.exists("counter"));
+
             assertEquals(6L, cache.incr("default", "counter2", 6));
             assertEquals(4L, cache.decr("default", "counter2", 2));
 
@@ -64,6 +68,14 @@ public class RedisCacheIntegrationTest {
             Object after = cache.get("num");
             assertTrue(after instanceof Long);
             assertEquals(5L, ((Long) after).longValue());
+
+            cache.put("badCounter", "nope");
+            try {
+                cache.incr("badCounter");
+                org.junit.Assert.fail("redis should reject non-numeric counters");
+            } catch (IllegalStateException expected) {
+                assertTrue(expected.getMessage().contains("not an integer counter"));
+            }
 
             cache.clear("default");
             assertFalse(cache.exists("gos"));

@@ -29,7 +29,17 @@
 </dependency>
 ```
 
-当前内置后端依赖版本：
+缓存后端依赖已声明为 optional，业务项目只需要额外添加实际使用的后端依赖。例如只用 Ehcache：
+
+```xml
+<dependency>
+    <groupId>net.sf.ehcache</groupId>
+    <artifactId>ehcache-core</artifactId>
+    <version>2.6.11</version>
+</dependency>
+```
+
+当前后端依赖版本：
 
 - Caffeine `2.8.0`
 - Ehcache `2.6.11`
@@ -57,6 +67,23 @@ User user = CacheKit.get("user:1");
 User cached = CacheKit.getOrSet("user:1", 300, () -> User.findById(1));
 
 CacheKit.remove("user:1");
+```
+
+也可以在由 Aifei AOP 创建或注入的业务对象中直接注入 `Cache`：
+
+```java
+import cn.aifei.aop.Inject;
+import cn.aifei.cache.Cache;
+
+public class UserService {
+
+    @Inject
+    Cache cache;
+
+    public User getUser(int id) {
+        return cache.getOrSet("user:" + id, 300, () -> User.findById(id));
+    }
+}
 ```
 
 ## 配置说明
@@ -90,7 +117,7 @@ cache.redis.timeoutMillis = 2000
 | `cache.defaultTtlSeconds` | `0` | 默认过期时间，单位秒。`0` 表示不过期。 |
 | `cache.cacheNull` | `false` | `getOrSet` 是否缓存 `null` 值。 |
 | `cache.keyPrefix` | `aifei` | Redis key 前缀，用于隔离不同应用或测试数据。 |
-| `cache.maxSize` | `10000` | `memory`、`caffeine`、`ehcache` 后端的最大容量提示。 |
+| `cache.maxSize` | `10000` | `memory`、`caffeine`、`ehcache` 后端的最大容量，必须大于 `0`。 |
 | `cache.redis.host` | `127.0.0.1` | Redis 主机地址。 |
 | `cache.redis.port` | `6379` | Redis 端口。 |
 | `cache.redis.user` | 空 | Redis ACL 用户名。普通密码模式可留空。 |
@@ -232,7 +259,7 @@ long stock = CacheKit.decr("stock", "sku-1001", 1);
 | `long decr(String key)` | 将默认缓存区域中的数字值减 `1`。key 不存在时从 `0` 开始。 |
 | `long decr(String cacheName, String key, long delta)` | 将指定缓存区域中的数字值减少 `delta`。 |
 
-计数器方法返回操作后的新值。Redis 计数器以整数字符串存储，读取结果类型为 `Long`。
+计数器方法返回操作后的新值。计数器 key 使用 `cache.defaultTtlSeconds` 作为过期时间；对非数字值执行 `incr/decr` 会抛出异常。Redis 计数器以整数字符串存储，读取结果类型为 `Long`。
 
 ### 生命周期和高级访问
 
@@ -276,9 +303,13 @@ CacheKit.init(cache);
 
 - `getOrSet` 内部使用少量分段锁，减少同一个 key 在高并发下的缓存击穿。
 - `cache.cacheNull = true` 时，`getOrSet` 可以缓存 `null` 值。
+- `CachePlugin` 启动后会同时注册 Aifei AOP 单例，因此既可以使用 `CacheKit.xxx`，也可以使用 `@Inject Cache cache`。
+- 注入得到的 `Cache` 生命周期由 `CachePlugin` 托管，业务代码无需也不应主动调用 `close()`。
+- `cacheName`、`key` 不能为空，TTL 不能小于 `0`，`cache.maxSize` 必须大于 `0`。
 - Redis 后端对普通对象使用 JDK 序列化，因此自定义对象需要实现 `java.io.Serializable`。
 - Redis 计数器以整数字符串存储，读取结果类型为 `Long`。
 - 对 Redis 中的数字值执行 `incr/decr` 后，再通过 `get` 读取会得到 `Long`。
+- 对非数字值执行 `incr/decr` 会抛出异常，避免不同后端之间出现隐式覆盖行为。
 - 共享 Redis 数据库中使用 `clearAll()` 要非常谨慎，务必为每个应用配置独立且非空的 `cache.keyPrefix`。
 
 ## 测试
@@ -312,7 +343,7 @@ mvn "-Dtest=RedisCacheIntegrationTest" "-Dredis.integration=true" "-Dredis.host=
 - `memory`：已通过
 - `caffeine`：已通过
 - `ehcache`：已通过
-- `redis`：已使用真实 Redis 连接测试通过
+- `redis`：集成测试默认跳过；需要真实 Redis 时按上方命令手动开启
 
 ## 构建
 

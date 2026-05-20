@@ -100,4 +100,10 @@ public class CacheKit {
     public static void clearInit() {
         cache = null;
     }
+
+    static void clearInit(Cache expected) {
+        if (cache == expected) {
+            cache = null;
+        }
+    }
 }

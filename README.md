@@ -27,7 +27,17 @@ The project is compiled with Java 8 bytecode target and has been tested with JDK
 </dependency>
 ```
 
-Current bundled backend dependencies:
+Backend dependencies are declared as optional, so application projects only need to add the backend they use. For example, when using Ehcache only:
+
+```xml
+<dependency>
+    <groupId>net.sf.ehcache</groupId>
+    <artifactId>ehcache-core</artifactId>
+    <version>2.6.11</version>
+</dependency>
+```
+
+Current backend dependency versions:
 
 - Caffeine `2.8.0`
 - Ehcache `2.6.11`
@@ -55,6 +65,23 @@ User user = CacheKit.get("user:1");
 User cached = CacheKit.getOrSet("user:1", 300, () -> User.findById(1));
 
 CacheKit.remove("user:1");
+```
+
+You can also inject `Cache` into objects created or injected by Aifei AOP:
+
+```java
+import cn.aifei.aop.Inject;
+import cn.aifei.cache.Cache;
+
+public class UserService {
+
+    @Inject
+    Cache cache;
+
+    public User getUser(int id) {
+        return cache.getOrSet("user:" + id, 300, () -> User.findById(id));
+    }
+}
 ```
 
 ## Configuration
@@ -88,7 +115,7 @@ Configuration fields:
 | `cache.defaultTtlSeconds` | `0` | Default TTL in seconds. `0` means no expiration. |
 | `cache.cacheNull` | `false` | Whether `getOrSet` should cache `null` values. |
 | `cache.keyPrefix` | `aifei` | Redis key prefix. Also helps isolate integration tests and multiple apps. |
-| `cache.maxSize` | `10000` | Max size hint for memory, Caffeine, and Ehcache backends. |
+| `cache.maxSize` | `10000` | Max size for memory, Caffeine, and Ehcache backends. Must be greater than `0`. |
 | `cache.redis.host` | `127.0.0.1` | Redis host. |
 | `cache.redis.port` | `6379` | Redis port. |
 | `cache.redis.user` | empty | Redis ACL username. Leave empty for password-only Redis. |
@@ -230,7 +257,7 @@ long stock = CacheKit.decr("stock", "sku-1001", 1);
 | `long decr(String key)` | Decrements a numeric value in the default cache region by `1`. Missing keys start from `0`. |
 | `long decr(String cacheName, String key, long delta)` | Decrements a numeric value in the specified cache region by `delta`. |
 
-Counter methods return the new value after the operation. Redis counters are stored as integer text and returned as `Long`.
+Counter methods return the new value after the operation. Counter keys use `cache.defaultTtlSeconds` as their TTL. Calling `incr/decr` on a non-numeric value throws an exception. Redis counters are stored as integer text and returned as `Long`.
 
 ### Lifecycle And Advanced Access
 
@@ -274,9 +301,13 @@ For application code outside the plugin lifecycle, instantiate the concrete back
 
 - `getOrSet` uses a small segmented lock to reduce cache stampede for the same key.
 - `cache.cacheNull = true` allows `getOrSet` to cache `null` values.
+- After `CachePlugin` starts, it also registers an Aifei AOP singleton, so both `CacheKit.xxx` and `@Inject Cache cache` are supported.
+- The lifecycle of an injected `Cache` is managed by `CachePlugin`; application code should not call `close()` on it.
+- `cacheName` and `key` must not be blank, TTL must not be negative, and `cache.maxSize` must be greater than `0`.
 - Redis serializes ordinary values with JDK serialization, so custom objects must implement `java.io.Serializable`.
 - Redis counters are stored as integer text and returned as `Long`.
 - After running `incr/decr` on a numeric Redis value, later `get` returns a `Long`.
+- Calling `incr/decr` on a non-numeric value throws an exception instead of overwriting it.
 - Avoid calling `clearAll()` in shared Redis databases unless `cache.keyPrefix` is unique for the current app.
 
 ## Tests
@@ -310,7 +341,7 @@ Tested status:
 - `memory`: passed
 - `caffeine`: passed
 - `ehcache`: passed
-- `redis`: passed with a real Redis connection
+- `redis`: integration test is skipped by default; enable it manually with a real Redis server
 
 ## Build
 

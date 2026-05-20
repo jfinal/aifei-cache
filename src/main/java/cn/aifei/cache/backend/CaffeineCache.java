@@ -39,17 +39,22 @@ public class CaffeineCache extends AbstractCache {
 
     @Override
     public boolean exists(String cacheName, String key) {
+        cacheName = requireCacheName(cacheName);
+        key = requireKey(key);
         return getValue(cacheName, key) != null;
     }
 
     @Override
     public void remove(String cacheName, String key) {
+        cacheName = requireCacheName(cacheName);
+        key = requireKey(key);
         store.invalidate(realKey(cacheName, key));
     }
 
     @Override
     public void clear(String cacheName) {
-        String prefix = cacheName + SEP;
+        cacheName = requireCacheName(cacheName);
+        String prefix = prefix(cacheName);
         Iterator<String> it = store.asMap().keySet().iterator();
         while (it.hasNext()) {
             if (it.next().startsWith(prefix)) {
@@ -65,11 +70,13 @@ public class CaffeineCache extends AbstractCache {
 
     @Override
     public long incr(String cacheName, String key, long delta) {
+        cacheName = requireCacheName(cacheName);
+        key = requireKey(key);
         String realKey = realKey(cacheName, key);
         Map<String, CacheEntry> map = store.asMap();
         synchronized (map) {
             Object old = getValue(cacheName, key);
-            long next = (old instanceof Number ? ((Number) old).longValue() : 0L) + delta;
+            long next = nextCounterValue(old, cacheName, key, delta);
             store.put(realKey, new CacheEntry(next, config.getDefaultTtlSeconds()));
             return next;
         }
@@ -82,6 +89,10 @@ public class CaffeineCache extends AbstractCache {
     }
 
     private String realKey(String cacheName, String key) {
-        return cacheName + SEP + key;
+        return prefix(cacheName) + key;
+    }
+
+    private String prefix(String cacheName) {
+        return cacheName.length() + SEP + cacheName + SEP;
     }
 }

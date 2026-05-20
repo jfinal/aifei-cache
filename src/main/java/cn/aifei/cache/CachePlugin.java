@@ -1,5 +1,7 @@
 package cn.aifei.cache;
 
+import cn.aifei.aop.Aop;
+import cn.aifei.aop.AopKit;
 import cn.aifei.cache.backend.CaffeineCache;
 import cn.aifei.cache.backend.EhcacheCache;
 import cn.aifei.cache.backend.MemoryCache;
@@ -12,30 +14,48 @@ public class CachePlugin implements Plugin {
     private Cache cache;
 
     public CachePlugin() {
-        this(CacheConfig.fromPropKit());
+        this(loadConfig());
     }
 
     public CachePlugin(CacheConfig config) {
+        if (config == null) {
+            throw new IllegalArgumentException("config can not be null");
+        }
         this.config = config;
     }
 
     @Override
-    public void start() {
+    public synchronized void start() {
+        if (cache != null) {
+            return;
+        }
+        registerInjectableCache();
         cache = createCache(config);
         CacheKit.init(cache);
     }
 
     @Override
-    public void stop() {
-        if (cache != null) {
-            cache.close();
-            cache = null;
+    public synchronized void stop() {
+        Cache old = cache;
+        cache = null;
+        if (old != null) {
+            try {
+                old.close();
+            } finally {
+                CacheKit.clearInit(old);
+            }
+        } else {
+            CacheKit.clearInit(null);
         }
-        CacheKit.clearInit();
     }
 
     protected Cache createCache(CacheConfig config) {
-        String type = config.getType() == null ? "memory" : config.getType().trim().toLowerCase();
+        if (config == null) {
+            throw new IllegalArgumentException("config can not be null");
+        }
+        String type = config.getType() == null || config.getType().trim().isEmpty()
+                ? "memory"
+                : config.getType().trim().toLowerCase();
         if ("memory".equals(type) || "map".equals(type)) {
             return new MemoryCache(config);
         }
@@ -49,5 +69,33 @@ public class CachePlugin implements Plugin {
             return new RedisCache(config);
         }
         throw new IllegalArgumentException("Unsupported cache.type: " + config.getType());
+    }
+
+    private static CacheConfig loadConfig() {
+        try {
+            return CacheConfig.fromPropKit();
+        } catch (IllegalStateException e) {
+            return new CacheConfig();
+        }
+    }
+
+    private static void registerInjectableCache() {
+        try {
+            AopKit.get().addSingletonObject(Cache.class, InjectableCache.INSTANCE);
+        } catch (RuntimeException e) {
+            Cache existing = currentAopCache();
+            if (existing == InjectableCache.INSTANCE) {
+                return;
+            }
+            throw new IllegalStateException("Aop singleton for Cache.class already exists", e);
+        }
+    }
+
+    private static Cache currentAopCache() {
+        try {
+            return Aop.get(Cache.class);
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 }

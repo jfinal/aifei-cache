@@ -10,6 +10,9 @@ public class JdkCacheSerializer implements CacheSerializer {
 
     @Override
     public byte[] serialize(Object value) {
+        if (value == null) {
+            throw new IllegalArgumentException("Redis cache value can not be null");
+        }
         if (!(value instanceof Serializable)) {
             throw new IllegalArgumentException("Redis cache value must implement Serializable: " + value.getClass().getName());
         }
@@ -26,6 +29,9 @@ public class JdkCacheSerializer implements CacheSerializer {
 
     @Override
     public Object deserialize(byte[] bytes) {
+        if (bytes == null) {
+            throw new IllegalArgumentException("bytes can not be null");
+        }
         try {
             try (ObjectInputStream in = new ObjectInputStream(new ByteArrayInputStream(bytes))) {
                 return in.readObject();
