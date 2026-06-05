@@ -27,7 +27,7 @@
 <dependency>
     <groupId>io.github.macaque0</groupId>
     <artifactId>aifei-cache</artifactId>
-    <version>1.0.0</version>
+    <version>1.0.1</version>
 </dependency>
 ```
 
@@ -85,6 +85,17 @@ public class UserService {
     public User getUser(int id) {
         return cache.getOrSet("user:" + id, 300, () -> User.findById(id));
     }
+}
+```
+
+如果 `Cache` 注入发生在 Aifei 的 `config(routes)` 阶段，例如路由拦截器中使用 `@Inject Cache cache`，需要先在更早执行的 `config(settings)` 中注册注入代理：
+
+```java
+import cn.aifei.config.Settings;
+import io.github.macaque0.aifei.cache.CachePlugin;
+
+public void config(Settings settings) {
+    CachePlugin.registerForInject();
 }
 ```
 
@@ -305,7 +316,9 @@ CacheKit.init(cache);
 
 - `getOrSet` 内部使用少量分段锁，减少同一个 key 在高并发下的缓存击穿。
 - `cache.cacheNull = true` 时，`getOrSet` 可以缓存 `null` 值。
-- `CachePlugin` 启动后会同时注册 Aifei AOP 单例，因此既可以使用 `CacheKit.xxx`，也可以使用 `@Inject Cache cache`。
+- `Cache` 保持为接口；注入时实际得到的是组件注册到 Aifei AOP 中的延迟代理。
+- `new CachePlugin()` 会自动注册注入代理；若拦截器在 `config(routes)` 阶段就被创建，需要先在 `config(settings)` 中调用 `CachePlugin.registerForInject()`。
+- 缓存读写能力在 `CachePlugin.start()` 初始化真实后端之后可用。
 - 注入得到的 `Cache` 生命周期由 `CachePlugin` 托管，业务代码无需也不应主动调用 `close()`。
 - `cacheName`、`key` 不能为空，TTL 不能小于 `0`，`cache.maxSize` 必须大于 `0`。
 - Redis 后端对普通对象使用 JDK 序列化，因此自定义对象需要实现 `java.io.Serializable`。

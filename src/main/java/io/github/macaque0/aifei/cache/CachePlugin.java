@@ -22,6 +22,16 @@ public class CachePlugin implements Plugin {
             throw new IllegalArgumentException("config can not be null");
         }
         this.config = config;
+        registerForInject();
+    }
+
+    /**
+     * Registers the lazy AOP proxy used by {@code @Inject Cache cache}.
+     * Call this in Aifei {@code config(settings)} when route interceptors
+     * need Cache injection before {@code config(plugins)} creates this plugin.
+     */
+    public static void registerForInject() {
+        registerInjectableCache();
     }
 
     @Override
@@ -29,7 +39,6 @@ public class CachePlugin implements Plugin {
         if (cache != null) {
             return;
         }
-        registerInjectableCache();
         cache = createCache(config);
         CacheKit.init(cache);
     }

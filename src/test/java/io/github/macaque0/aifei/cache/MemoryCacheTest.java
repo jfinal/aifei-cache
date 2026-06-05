@@ -5,8 +5,10 @@ import cn.aifei.aop.Inject;
 import cn.aifei.util.PropKit;
 import org.junit.Test;
 
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -267,6 +269,46 @@ public class MemoryCacheTest {
         } finally {
             first.stop();
             second.stop();
+        }
+    }
+
+    @Test
+    public void cacheCanBeInjectedBeforePluginStart() {
+        removeAopCacheSingleton();
+        CachePlugin.registerForInject();
+        CacheConsumer consumer = Aop.inject(new CacheConsumer());
+        assertNotNull(consumer.cache);
+
+        try {
+            consumer.cache.get("k");
+            fail("Expected CacheKit to require CachePlugin start before cache operations");
+        } catch (IllegalStateException expected) {
+            assertTrue(expected.getMessage().contains("CacheKit has not been initialized"));
+        }
+
+        CachePlugin plugin = new CachePlugin(new CacheConfig()
+                .setType("memory")
+                .setDefaultName("early_inject_" + System.nanoTime()));
+        try {
+            plugin.start();
+            consumer.cache.put("k", "v");
+            assertEquals("v", consumer.cache.get("k"));
+        } finally {
+            plugin.stop();
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void removeAopCacheSingleton() {
+        try {
+            Field factoryField = Aop.class.getDeclaredField("aopFactory");
+            factoryField.setAccessible(true);
+            Object factory = factoryField.get(null);
+            Field singletonCacheField = factory.getClass().getDeclaredField("singletonCache");
+            singletonCacheField.setAccessible(true);
+            ((Map<Class<?>, Object>) singletonCacheField.get(factory)).remove(Cache.class);
+        } catch (ReflectiveOperationException e) {
+            throw new RuntimeException(e);
         }
     }
 

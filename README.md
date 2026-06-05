@@ -25,7 +25,7 @@ The project is compiled with Java 8 bytecode target and has been tested with JDK
 <dependency>
     <groupId>io.github.macaque0</groupId>
     <artifactId>aifei-cache</artifactId>
-    <version>1.0.0</version>
+    <version>1.0.1</version>
 </dependency>
 ```
 
@@ -83,6 +83,17 @@ public class UserService {
     public User getUser(int id) {
         return cache.getOrSet("user:" + id, 300, () -> User.findById(id));
     }
+}
+```
+
+If `Cache` injection happens during Aifei's `config(routes)` phase, for example in route interceptors that use `@Inject Cache cache`, register the injection proxy earlier in `config(settings)`:
+
+```java
+import cn.aifei.config.Settings;
+import io.github.macaque0.aifei.cache.CachePlugin;
+
+public void config(Settings settings) {
+    CachePlugin.registerForInject();
 }
 ```
 
@@ -303,7 +314,9 @@ For application code outside the plugin lifecycle, instantiate the concrete back
 
 - `getOrSet` uses a small segmented lock to reduce cache stampede for the same key.
 - `cache.cacheNull = true` allows `getOrSet` to cache `null` values.
-- After `CachePlugin` starts, it also registers an Aifei AOP singleton, so both `CacheKit.xxx` and `@Inject Cache cache` are supported.
+- `Cache` remains an interface; injected fields receive the lazy proxy registered with Aifei AOP.
+- `new CachePlugin()` registers the injection proxy automatically. If interceptors are created during `config(routes)`, call `CachePlugin.registerForInject()` first in `config(settings)`.
+- Cache operations are available after `CachePlugin.start()` initializes the actual backend.
 - The lifecycle of an injected `Cache` is managed by `CachePlugin`; application code should not call `close()` on it.
 - `cacheName` and `key` must not be blank, TTL must not be negative, and `cache.maxSize` must be greater than `0`.
 - Redis serializes ordinary values with JDK serialization, so custom objects must implement `java.io.Serializable`.
